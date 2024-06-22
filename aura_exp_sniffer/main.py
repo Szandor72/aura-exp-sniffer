@@ -75,9 +75,11 @@ def main(
             routes=[],
             custom_component_list=[],
         )
-    if (
-        not all([cli_context.obj.active_endpoint, cli_context.obj.aura_config])
-        and not "--help" in sys.argv
+    if not all(
+        [cli_context.obj.active_endpoint, cli_context.obj.aura_config]
+    ) and not any(
+        arg in sys.argv
+        for arg in ["--help", "--show-completion", "--install-completion"]
     ):
         select_aura_endpoint_after_validation(cli_context)
         get_aura_config_from_url(cli_context)
@@ -121,11 +123,11 @@ def get_aura_config_from_url(cli_context: typer.Context):
     print_message(":white_check_mark: Success", "Aura Endpoint Config set")
 
 
-@cli.command()
+@cli.command("routes")
 def get_routes(
     cli_context: typer.Context,
     display: Annotated[
-        bool, typer.Option("-d", "--display", help="Display each component name")
+        bool, typer.Option("-d", "--display", help="Display each route path")
     ] = True,
 ):
     """
@@ -146,7 +148,7 @@ def get_routes(
             print(route.get("path"))
 
 
-@cli.command()
+@cli.command("custom-components")
 def get_custom_components(
     cli_context: typer.Context,
     display: Annotated[
@@ -174,7 +176,7 @@ def get_custom_components(
             print(component)
 
 
-@cli.command()
+@cli.command("apex-methods")
 def get_apex_methods(cli_context: typer.Context):
     """
     Get all Apex methods exposed in custom components
@@ -194,7 +196,7 @@ def get_apex_methods(cli_context: typer.Context):
         raise typer.Exit(1)
 
 
-@cli.command()
+@cli.command("accessible-sobjects")
 def list_accessible_sobjects(cli_context: typer.Context):
     """
     Will print accessible Standard and Custom sObjects respectively
@@ -217,7 +219,7 @@ def list_accessible_sobjects(cli_context: typer.Context):
         raise typer.Exit(1)
 
 
-@cli.command()
+@cli.command("records")
 def get_records(
     cli_context: typer.Context,
     sobject_name: Annotated[str, typer.Argument(help="The sObject API Name")] = "User",
