@@ -2,7 +2,7 @@
 name = "aura-exp-sniffer"
 version = "0.1.0"
 description = ""
-authors = ["Ch. Szandor Knapp <christian.knapp@die-interaktiven.de>"]
+authors = ["Ch. Szandor Knapp <szandor72@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
