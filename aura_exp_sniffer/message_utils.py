@@ -10,3 +10,7 @@ def print_message(title, message=""):
 
 def print_error(title, message=""):
     print(ERROR_TEMPLATE.format(title=title, details=message))
+
+
+def print_json(json_data):
+    print(json_data)

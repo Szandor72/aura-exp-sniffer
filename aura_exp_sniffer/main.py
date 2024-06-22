@@ -2,11 +2,12 @@ import typer
 from typing_extensions import Annotated
 from types import SimpleNamespace
 import json
+import sys
 
 
 from exp_cloud_requests import AuraEndpointSelector, AuraConfigLoader, AuraActionRequest
-from message_utils import print_message, print_error
-from file_utils import load_payload_json_for
+from message_utils import print_message, print_error, print_json
+from file_utils import load_payload_json_for, dump_json_to_file
 
 cli = typer.Typer(
     help="Aura Sniffer: A simple security research tool to access undocumented Aura APIs",
@@ -59,7 +60,10 @@ def main(
             active_endpoint="",
             aura_config={},
         )
-    if not all([cli_context.obj.active_endpoint, cli_context.obj.aura_config]):
+    if (
+        not all([cli_context.obj.active_endpoint, cli_context.obj.aura_config])
+        and not "--help" in sys.argv
+    ):
         select_aura_endpoint_after_validation(cli_context)
         get_aura_config_from_url(cli_context)
 
@@ -100,24 +104,76 @@ def get_aura_config_from_url(cli_context: typer.Context):
 
 
 @cli.command()
-def fetch(cli_context: typer.Context):
+def list_accessible_sobjects(cli_context: typer.Context):
     """
-    Not implemented
+    Will print accessible Standard and Custom sObjects respectively
     """
     try:
         payload = load_payload_json_for("ACTION$getConfigData.json")
-        print(json.dumps(payload, indent=2))
         json_response = AuraActionRequest(
-            cli_context.obj.active_endpoint,
-            json.dumps(payload),
-            cli_context.obj.aura_config,
-            cli_context.obj.aura_token,
-            cli_context.obj.session_id,
+            json.dumps(payload), cli_context.obj
         ).send_request()
-        print_message("SObject List", json_response)
+        api_name_to_id_prefixes = json_response.get("apiNamesToKeyPrefixes")
+        custom_sobject_list = []
+        standard_sobject_list = []
+        for key in api_name_to_id_prefixes.keys():
+            if key.endswith("__c"):
+                custom_sobject_list.append(key)
+            else:
+                standard_sobject_list.append(key)
+        print_message("Custom sObject list", custom_sobject_list)
+        print_message("Standard sObject list", standard_sobject_list)
     except Exception as e:
         print_error("Error getting sObject list", str(e))
         raise typer.Exit(1)
+
+
+@cli.command()
+def get_records(
+    cli_context: typer.Context,
+    sobject_name: Annotated[str, typer.Argument(help="The sObject API Name")] = "User",
+    number_of_records: Annotated[
+        int, typer.Argument(help="Number of records to fetch")
+    ] = 10,
+    dump: Annotated[
+        bool, typer.Option("--dump", "-d", help="Dump records to a file")
+    ] = False,
+):
+    """
+    Get records by sObject API Name
+    """
+    MAX_PAGE_SIZE = 1000
+    DEFAULT_PAGE = 1
+    payload = load_payload_json_for("ACTION$getItems.json")
+    payload["actions"][0]["params"]["entityNameOrId"] = sobject_name
+    payload["actions"][0]["params"]["pageSize"] = number_of_records
+    payload["actions"][0]["params"]["currentPage"] = DEFAULT_PAGE
+    json_response = AuraActionRequest(
+        json.dumps(payload), cli_context.obj
+    ).send_request()
+    if json_response["result"] and json_response["totalCount"]:
+        print_message(
+            "Total records of type %s retrieved" % sobject_name,
+            json_response["totalCount"],
+        )
+        retrieved_records = []
+        for recordWraper in json_response["result"]:
+            retrieved_records.append(recordWraper["record"])
+
+        print_message("Records")
+        print_json(retrieved_records)
+
+        if dump:
+            url_for_filename = cli_context.obj.url.replace("https://", "").replace(
+                "/", "_"
+            )
+            dump_json_to_file(
+                retrieved_records, f"{url_for_filename}-{sobject_name}-records.json"
+            )
+        return
+    print_error(
+        ":red_cross: Error retrieving %s records" % sobject_name, "No records found"
+    )
 
 
 if __name__ == "__main__":

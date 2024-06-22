@@ -164,19 +164,12 @@ class AuraEndpointSelector:
 
 
 class AuraActionRequest:
-    def __init__(
-        self,
-        aura_endpoint_url: str,
-        payload: str,
-        aura_endpoint_config: map,
-        aura_token: str = "",
-        sid: str = "",
-    ):
-        self.aura_endpoint_url = aura_endpoint_url
+    def __init__(self, payload: str, config: map):
+        self.aura_endpoint_url = config.active_endpoint
         self.payload = payload
-        self.aura_endpoint_config = aura_endpoint_config
-        self.aura_token = aura_token
-        self.sid = sid
+        self.aura_endpoint_config = config.aura_config
+        self.aura_token = config.aura_token
+        self.sid = config.session_id
 
     def send_request(self):
         values = {
@@ -197,4 +190,18 @@ class AuraActionRequest:
         except Exception as e:
             raise e
 
-        return response_json
+        if (
+            response_json.get("exceptionEvent") is not None
+            and response_json.get("exceptionEvent") is True
+        ):
+            raise Exception(response_json)
+
+        if (
+            response_json.get("actions") is None
+            or response_json.get("actions")[0].get("state") is None
+        ):
+            raise Exception(
+                "Failed to get action property in response: %s" % response_json
+            )
+
+        return response_json.get("actions")[0].get("returnValue")
