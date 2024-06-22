@@ -1,7 +1,6 @@
 import typer
 from typing_extensions import Annotated
 from types import SimpleNamespace
-import json
 import sys
 from rich import print
 
@@ -12,8 +11,14 @@ from exp_cloud_requests import (
     AuraActionRequest,
     AuraRoutesCollector,
     AuraComponentCollector,
+    AuraComponentApexMethodCollector,
 )
-from message_utils import print_message, print_error, print_json
+from message_utils import (
+    print_message,
+    print_error,
+    print_json,
+    print_component_apex_details,
+)
 from file_utils import load_payload_json_for, dump_json_to_file
 
 cli = typer.Typer(
@@ -142,7 +147,7 @@ def get_routes(
 
 
 @cli.command()
-def get_custom_component_names(
+def get_custom_components(
     cli_context: typer.Context,
     display: Annotated[
         bool, typer.Option("-d", "--display", help="Display each component name")
@@ -167,6 +172,26 @@ def get_custom_component_names(
         )
         for component in custom_component_list:
             print(component)
+
+
+@cli.command()
+def get_apex_methods(cli_context: typer.Context):
+    """
+    Get all Apex methods exposed in custom components
+    """
+    if not cli_context.obj.custom_component_list:
+        get_custom_components(cli_context, display=False)
+    if len(cli_context.obj.custom_component_list) == 0:
+        print_error("No custom components found", "No Apex methods to retrieve")
+        raise typer.Exit(1)
+    try:
+        components_with_apex_details = AuraComponentApexMethodCollector(
+            cli_context.obj
+        ).collect()
+        print_component_apex_details(components_with_apex_details)
+    except Exception as e:
+        print_error("Error getting Apex methods", str(e))
+        raise typer.Exit(1)
 
 
 @cli.command()

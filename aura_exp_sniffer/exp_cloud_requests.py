@@ -253,6 +253,11 @@ class AuraComponentCollector:
             json_response = AuraActionRequest(
                 payload, self.config, return_full_response=True
             ).send_request()
+
+            if json_response.get("actions")[0].get("state") != "SUCCESS":
+                print_error("Failed to get page components for", route["path"])
+                continue
+
             all_component_descriptors = self._find_component_descriptors(json_response)
             for cmp in all_component_descriptors:
                 if (
@@ -289,6 +294,96 @@ class AuraComponentCollector:
         ]
         payload["actions"][0]["params"]["brandingSetId"] = route["brandingSetId"]
         return payload
+
+
+class AuraComponentApexMethodCollector:
+    def __init__(self, config: object):
+        self.custom_component_list = config.custom_component_list
+        self.config = config
+        self.apex_method_details = []
+
+    def collect(self):
+        print_message(
+            "Start Collecting Apex Methods"
+        ), "%s components to scan. Be patient." % len(self.custom_component_list)
+        payload = load_payload_json_for("ACTION$getComponentDef.json")
+        for component_name in self.custom_component_list:
+            payload["actions"][0]["params"]["name"] = component_name
+            json_response = AuraActionRequest(
+                payload, self.config, return_full_response=True
+            ).send_request()
+
+            if json_response.get("actions")[0].get("state") != "SUCCESS":
+                print_error("Failed to get component definition for", component_name)
+                continue
+            self._parse_response(json_response, component_name)
+        return self.apex_method_details
+
+    def _parse_response(self, json_response: json, component_name: str):
+        is_aura_component = (
+            "context" in json_response and "componentDefs" in json_response["context"]
+        )
+        is_lwc_component = "lri" in json_response["actions"][0]["returnValue"]
+
+        component_details = {}
+
+        if is_aura_component:
+            self._parse_aura_component(json_response, component_name, component_details)
+
+        elif is_lwc_component:
+            self._parse_lwc_component(json_response, component_name, component_details)
+
+    def _parse_aura_component(
+        self, json_response: json, component_name: str, component_details: dict
+    ):
+        for cmp in json_response["context"]["componentDefs"]:
+            if "cd" in cmp and "ac" in cmp["cd"]:
+                component_details.update(
+                    component_name=component_name,
+                    namespace=component_name.split(":")[0],
+                    type="Aura",
+                )
+                component_details["methods"] = []
+                for details in cmp["cd"]["ac"]:
+                    if details["descriptor"].startswith("apex://"):
+                        classname = re.search(
+                            "apex:\/\/(\w+)\/", details["descriptor"]
+                        ).group(1)
+                        component_details["methods"].append(
+                            dict(
+                                classname=classname,
+                                methodname=details["n"],
+                                descriptor=details["descriptor"],
+                                params=details["pa"],
+                            )
+                        )
+                self.apex_method_details.append(component_details)
+
+    def _parse_lwc_component(
+        self, json_response: json, component_name: str, component_details: dict
+    ):
+        lwc_details = json_response["actions"][0]["returnValue"]["lri"]
+        append = False
+        component_details["methods"] = []
+        for key, value in lwc_details.items():
+            if value == "apexMethod":
+                append = True
+                component_details["methods"].append(
+                    dict(
+                        classname=key.split(".")[0],
+                        methodname=key.split(".")[1],
+                        descriptor="apex://%s/$ACTION$%s"
+                        % (key.split(".")[0], key.split(".")[1]),
+                        params=["UNKNOWN"],
+                    )
+                )
+        if append:
+            component_details.update(
+                component_name=component_name,
+                namespace=component_name.split(":")[0],
+                type="LWC",
+            )
+            self.apex_method_details.append(component_details)
 
 
 class AuraActionRequest:
