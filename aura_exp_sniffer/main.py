@@ -263,5 +263,32 @@ def get_records(
     print_error("Error retrieving %s records" % sobject_name, "No records found")
 
 
+@cli.command("record")
+def get_record(
+    cli_context: typer.Context,
+    record_id: Annotated[str, typer.Argument(help="The Id of an sObject record")],
+    dump: Annotated[
+        bool, typer.Option("--dump", "-d", help="Dump records to a file")
+    ] = False,
+):
+    """
+    Get record by record Id
+    """
+    payload = load_payload_json_for("ACTION$getRecord.json")
+    payload["actions"][0]["params"]["recordId"] = record_id
+    json_response = AuraActionRequest(payload, cli_context.obj).send_request()
+    if json_response["record"]:
+        print_message("Record", "successfully retrieved")
+        print_json(json_response["record"])
+
+    if dump:
+        url_for_filename = cli_context.obj.url.replace("https://", "").replace("/", "_")
+        dump_json_to_file(
+            json_response["record"], f"{url_for_filename}-{record_id}-record.json"
+        )
+        return
+    print_error("Error retrieving record", "No record found")
+
+
 if __name__ == "__main__":
     cli()
