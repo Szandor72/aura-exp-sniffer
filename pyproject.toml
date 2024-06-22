@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "aura-exp-sniffer"
+version = "0.1.0"
+description = ""
+authors = ["Ch. Szandor Knapp <christian.knapp@die-interaktiven.de>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+typer = {extras = ["all"], version = "^0.12.3"}
+requests = "^2.32.3"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
