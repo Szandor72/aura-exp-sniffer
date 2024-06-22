@@ -1,11 +1,12 @@
 import typer
 from typing_extensions import Annotated
-from rich import print
 from types import SimpleNamespace
+import json
 
 
-from exp_cloud_requests import AuraEndpointSelector, AuraConfigLoader
+from exp_cloud_requests import AuraEndpointSelector, AuraConfigLoader, AuraActionRequest
 from message_utils import print_message, print_error
+from file_utils import load_payload_json_for
 
 cli = typer.Typer(
     help="Aura Sniffer: A simple security research tool to access undocumented Aura APIs",
@@ -99,11 +100,24 @@ def get_aura_config_from_url(cli_context: typer.Context):
 
 
 @cli.command()
-def fetch():
+def fetch(cli_context: typer.Context):
     """
     Not implemented
     """
-    print("Not implemented yet")
+    try:
+        payload = load_payload_json_for("ACTION$getConfigData.json")
+        print(json.dumps(payload, indent=2))
+        json_response = AuraActionRequest(
+            cli_context.obj.active_endpoint,
+            json.dumps(payload),
+            cli_context.obj.aura_config,
+            cli_context.obj.aura_token,
+            cli_context.obj.session_id,
+        ).send_request()
+        print_message("SObject List", json_response)
+    except Exception as e:
+        print_error("Error getting sObject list", str(e))
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":

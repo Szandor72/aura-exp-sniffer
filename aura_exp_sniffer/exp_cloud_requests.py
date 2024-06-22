@@ -5,6 +5,7 @@ from urllib3.exceptions import InsecureRequestWarning
 import urllib.parse
 import re
 import json
+from json.decoder import JSONDecodeError
 
 from message_utils import print_message, print_error
 
@@ -67,7 +68,7 @@ class AuraConfigLoader:
         raw_response = self._handle_login_page_redirects(raw_response)
         aura_endpoint_details = self._extract_aura_endpoint_details(raw_response)
         self._validate_aura_endpoint_details(aura_endpoint_details)
-        return self._build_aura_config(aura_endpoint_details)
+        return json.dumps(self._build_aura_config(aura_endpoint_details))
 
     def _handle_login_page_redirects(self, raw_response):
         if ("window.location.href ='%s" % self.url) in raw_response:
@@ -160,3 +161,40 @@ class AuraEndpointSelector:
                 self.active_endpoint = endpoint
                 return
         self.active_endpoint = available_endpoints[0]
+
+
+class AuraActionRequest:
+    def __init__(
+        self,
+        aura_endpoint_url: str,
+        payload: str,
+        aura_endpoint_config: map,
+        aura_token: str = "",
+        sid: str = "",
+    ):
+        self.aura_endpoint_url = aura_endpoint_url
+        self.payload = payload
+        self.aura_endpoint_config = aura_endpoint_config
+        self.aura_token = aura_token
+        self.sid = sid
+
+    def send_request(self):
+        values = {
+            "message": self.payload,
+            "aura.context": self.aura_endpoint_config,
+            "aura.token": self.aura_token,
+        }
+
+        try:
+            response_body = BasicHttp().request(
+                self.aura_endpoint_url,
+                values=values,
+                method="POST",
+            )
+            response_json = json.loads(response_body)
+        except JSONDecodeError:
+            raise Exception(f"JSON Decode error. Response -> {response_body}")
+        except Exception as e:
+            raise e
+
+        return response_json
