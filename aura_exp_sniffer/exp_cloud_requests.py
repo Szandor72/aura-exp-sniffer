@@ -7,6 +7,7 @@ import re
 import json
 from json.decoder import JSONDecodeError
 
+from file_utils import load_payload_json_for
 from message_utils import print_message, print_error
 
 
@@ -58,17 +59,22 @@ class AuraConfigLoader:
     Loads the Aura Config like fwuid from the Experience Cloud URL
     """
 
-    def __init__(self, url: str):
-        self.url = url
+    def __init__(self, config: object):
+        self.url = config.url
+        self.session_id = config.session_id
         self.aura_config = {}
 
     def get_aura_config(self):
         print_message("Getting Aura Config")
-        raw_response = BasicHttp().request(self.url)
+        raw_response = BasicHttp(self.session_id).request(self.url)
         raw_response = self._handle_login_page_redirects(raw_response)
+        bootstrap_url = self._extract_bootstrap_url(raw_response)
         aura_endpoint_details = self._extract_aura_endpoint_details(raw_response)
         self._validate_aura_endpoint_details(aura_endpoint_details)
-        return json.dumps(self._build_aura_config(aura_endpoint_details))
+        return {
+            "aura_config": json.dumps(self._build_aura_config(aura_endpoint_details)),
+            "bootstrap_url": bootstrap_url,
+        }
 
     def _handle_login_page_redirects(self, raw_response):
         if ("window.location.href ='%s" % self.url) in raw_response:
@@ -81,6 +87,18 @@ class AuraConfigLoader:
                 print_error("Error accessing login page", str(e))
                 raise
         return raw_response
+
+    def _extract_bootstrap_url(self, raw_response):
+        extractScriptTagsPattern = R"<script([^>]*)?>.*?</script>"
+
+        srcFromLastScriptTag = (
+            re.findall(extractScriptTagsPattern, raw_response)[-1]
+            .replace('src="', "")
+            .replace('"', "")
+            .replace(" ", "")
+        )
+        parsedUrl = urllib.parse.urlsplit(self.url)
+        return parsedUrl.scheme + "://" + parsedUrl.netloc + srcFromLastScriptTag
 
     def _extract_aura_endpoint_details(self, raw_response):
         if "fwuid" not in raw_response:
@@ -117,11 +135,12 @@ class AuraConfigLoader:
 
 class AuraEndpointSelector:
     """
-    Selects the preferred Aura endpoint for the Experience Cloud URL
+    Selects the preferred Aura endpoint for the Experience Cloud URL.
+    Even if session_id is present, needs to run unauthenticated
     """
 
-    def __init__(self, url):
-        self.url = url
+    def __init__(self, config: object):
+        self.url = config.url
         self.active_endpoint = None
 
     def select_aura_endpoint(self):
@@ -134,7 +153,8 @@ class AuraEndpointSelector:
             print_error("No endpoints available", "Is the URL correct?")
             raise
 
-        print_message("Available Endpoints", available_endpoints)
+        print_message("Available Endpoints")
+        print(available_endpoints)
         self._select_preferred_endpoint(available_endpoints)
         return self.active_endpoint
 
@@ -163,13 +183,122 @@ class AuraEndpointSelector:
         self.active_endpoint = available_endpoints[0]
 
 
+class AuraRoutesCollector:
+    """
+    Follows bootstrap url and extracts route details
+    """
+
+    def __init__(self, config: object):
+        self.bootstrap_url = config.aura_bootstrap_url
+        self.session_id = config.session_id
+        self.routes = []
+
+    def collect(self):
+        print_message("Start Collecting Routes")
+        raw_response = BasicHttp().request(self.bootstrap_url)
+        self.routes = self._extract_routes(raw_response)
+        return self.routes
+
+    def _extract_routes(self, raw_response: str):
+        aura_attributes = self.bootstrap_url.split("bootstrap.js?aura.attributes=")[1]
+        aura_attributes = aura_attributes.split("&jwt=")[0]
+        aura_attributes = json.loads(urllib.parse.unquote(aura_attributes))
+
+        view_details_pattern = R'routes":\{.+?,\s?.+?\}\s?\}'
+
+        parsed_response = raw_response.replace("\n", "")
+        parsed_response = " ".join(parsed_response.split())
+        view_details = re.search(view_details_pattern, parsed_response)
+        routes_json = view_details.group().replace('routes":', "")
+        routes_map = json.loads(routes_json)
+
+        # print(json.dumps(routes_map, indent=4))
+
+        routes = []
+        for key, value in routes_map.items():
+            routes.append(
+                dict(
+                    path=key,
+                    id=value["id"],
+                    event=value["event"],
+                    route_uddid=value["route_uddid"],
+                    view_uuid=value["view_uuid"],
+                    themeLayoutType=aura_attributes["themeLayoutType"],
+                    publishedChangelistNum=aura_attributes["publishedChangelistNum"],
+                    brandingSetId=aura_attributes["brandingSetId"],
+                )
+            )
+
+        return routes
+
+
+class AuraComponentCollector:
+    def __init__(self, config: object):
+        self.routes = config.routes
+        self.config = config
+        self.custom_components = []
+
+    def collect(self):
+        print_message(
+            "Start Collecting Components"
+        ), "%s routes to scan. Be patient." % len(self.routes)
+        excluded_standard_component_namespaces = list(
+            load_payload_json_for("IGNORELIST.json")
+        )
+        payload_template = load_payload_json_for("ACTION$getPageComponent.json")
+        for route in self.routes:
+            payload = self._create_payload_for_getCustomComponents(
+                route, payload_template
+            )
+            json_response = AuraActionRequest(
+                payload, self.config, return_full_response=True
+            ).send_request()
+            all_component_descriptors = self._find_component_descriptors(json_response)
+            for cmp in all_component_descriptors:
+                if (
+                    not any(x in cmp for x in excluded_standard_component_namespaces)
+                    and cmp not in self.custom_components
+                ):
+                    self.custom_components.append(cmp)
+        return self.custom_components
+
+    def _find_component_descriptors(self, json_response):
+        descriptors = []
+        for key, value in json_response.items():
+            if key == "descriptor" and value.startswith("markup://"):
+                descriptors.append(value.replace("markup://", ""))
+            elif isinstance(value, dict):
+                descriptors.extend(self._find_component_descriptors(value))
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict):
+                        descriptors.extend(self._find_component_descriptors(item))
+        return set(descriptors)
+
+    def _create_payload_for_getCustomComponents(self, route, payload):
+        payload["actions"][0]["params"]["attributes"]["viewId"] = route["id"]
+        payload["actions"][0]["params"]["attributes"]["routeType"] = route["event"]
+        payload["actions"][0]["params"]["attributes"]["themeLayoutType"] = route[
+            "themeLayoutType"
+        ]
+        payload["actions"][0]["params"]["attributes"]["params"]["viewid"] = route[
+            "view_uuid"
+        ]
+        payload["actions"][0]["params"]["publishedChangelistNum"] = route[
+            "publishedChangelistNum"
+        ]
+        payload["actions"][0]["params"]["brandingSetId"] = route["brandingSetId"]
+        return payload
+
+
 class AuraActionRequest:
-    def __init__(self, payload: str, config: map):
+    def __init__(self, payload: json, config: map, return_full_response: bool = False):
         self.aura_endpoint_url = config.active_endpoint
-        self.payload = payload
+        self.payload = json.dumps(payload)
         self.aura_endpoint_config = config.aura_config
         self.aura_token = config.aura_token
-        self.sid = config.session_id
+        self.session_id = config.session_id
+        self.return_raw_response = return_full_response
 
     def send_request(self):
         values = {
@@ -189,6 +318,9 @@ class AuraActionRequest:
             raise Exception(f"JSON Decode error. Response -> {response_body}")
         except Exception as e:
             raise e
+
+        if self.return_raw_response:
+            return response_json
 
         if (
             response_json.get("exceptionEvent") is not None

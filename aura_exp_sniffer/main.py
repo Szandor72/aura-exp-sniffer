@@ -3,9 +3,16 @@ from typing_extensions import Annotated
 from types import SimpleNamespace
 import json
 import sys
+from rich import print
 
 
-from exp_cloud_requests import AuraEndpointSelector, AuraConfigLoader, AuraActionRequest
+from exp_cloud_requests import (
+    AuraEndpointSelector,
+    AuraConfigLoader,
+    AuraActionRequest,
+    AuraRoutesCollector,
+    AuraComponentCollector,
+)
 from message_utils import print_message, print_error, print_json
 from file_utils import load_payload_json_for, dump_json_to_file
 
@@ -56,9 +63,12 @@ def main(
         cli_context.obj = SimpleNamespace(
             url=url,
             aura_token=aura_token,
+            aura_bootstrap_url="",
             session_id=session_id,
             active_endpoint="",
             aura_config={},
+            routes=[],
+            custom_component_list=[],
         )
     if (
         not all([cli_context.obj.active_endpoint, cli_context.obj.aura_config])
@@ -77,7 +87,7 @@ def select_aura_endpoint_after_validation(cli_context: typer.Context):
 
     try:
         cli_context.obj.active_endpoint = AuraEndpointSelector(
-            cli_context.obj.url
+            cli_context.obj
         ).select_aura_endpoint()
     except Exception as e:
         print_error("Error selecting Aura endpoint", str(e))
@@ -94,13 +104,69 @@ def get_aura_config_from_url(cli_context: typer.Context):
         return
 
     try:
-        aura_endpoint_config = AuraConfigLoader(cli_context.obj.url).get_aura_config()
+        aura_config = AuraConfigLoader(cli_context.obj).get_aura_config()
+        aura_endpoint_config = aura_config.get("aura_config")
+        bootstrap_url = aura_config.get("bootstrap_url")
     except Exception as e:
         raise typer.Exit(1)
 
     cli_context.obj.aura_config = aura_endpoint_config
+    cli_context.obj.aura_bootstrap_url = bootstrap_url
 
     print_message(":white_check_mark: Success", "Aura Endpoint Config set")
+
+
+@cli.command()
+def get_routes(
+    cli_context: typer.Context,
+    display: Annotated[
+        bool, typer.Option("-d", "--display", help="Display each component name")
+    ] = True,
+):
+    """
+    Get all available Aura routes
+    """
+    print_message("Getting Aura Routes:", "follow Bootstrap URL")
+    try:
+        routes = AuraRoutesCollector(cli_context.obj).collect()
+    except Exception as e:
+        print_error("Error getting Aura routes", str(e))
+        raise typer.Exit(1)
+
+    cli_context.obj.routes = routes
+
+    if display:
+        print_message("Routes", "%s routes found" % len(routes))
+        for route in routes:
+            print(route.get("path"))
+
+
+@cli.command()
+def get_custom_component_names(
+    cli_context: typer.Context,
+    display: Annotated[
+        bool, typer.Option("-d", "--display", help="Display each component name")
+    ] = True,
+):
+    """
+    Get all exposed custom component names
+    """
+    if not cli_context.obj.routes:
+        get_routes(cli_context, display=False)
+    try:
+        custom_component_list = AuraComponentCollector(cli_context.obj).collect()
+    except Exception as e:
+        print_error("Error getting custom component names", str(e))
+        raise typer.Exit(1)
+
+    cli_context.obj.custom_component_list = custom_component_list
+
+    if display:
+        print_message(
+            "Custom Components", "%s components found" % len(custom_component_list)
+        )
+        for component in custom_component_list:
+            print(component)
 
 
 @cli.command()
@@ -110,9 +176,7 @@ def list_accessible_sobjects(cli_context: typer.Context):
     """
     try:
         payload = load_payload_json_for("ACTION$getConfigData.json")
-        json_response = AuraActionRequest(
-            json.dumps(payload), cli_context.obj
-        ).send_request()
+        json_response = AuraActionRequest(payload, cli_context.obj).send_request()
         api_name_to_id_prefixes = json_response.get("apiNamesToKeyPrefixes")
         custom_sobject_list = []
         standard_sobject_list = []
@@ -148,9 +212,7 @@ def get_records(
     payload["actions"][0]["params"]["entityNameOrId"] = sobject_name
     payload["actions"][0]["params"]["pageSize"] = number_of_records
     payload["actions"][0]["params"]["currentPage"] = DEFAULT_PAGE
-    json_response = AuraActionRequest(
-        json.dumps(payload), cli_context.obj
-    ).send_request()
+    json_response = AuraActionRequest(payload, cli_context.obj).send_request()
     if json_response["result"] and json_response["totalCount"]:
         print_message(
             "Total records of type %s retrieved" % sobject_name,
@@ -171,9 +233,7 @@ def get_records(
                 retrieved_records, f"{url_for_filename}-{sobject_name}-records.json"
             )
         return
-    print_error(
-        ":red_cross: Error retrieving %s records" % sobject_name, "No records found"
-    )
+    print_error("Error retrieving %s records" % sobject_name, "No records found")
 
 
 if __name__ == "__main__":
