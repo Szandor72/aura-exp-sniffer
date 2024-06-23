@@ -4,6 +4,8 @@ from types import SimpleNamespace
 import sys
 from rich import print
 import json
+from pathlib import Path
+from typing import Optional
 
 
 from exp_cloud_requests import (
@@ -37,6 +39,7 @@ def main(
             "--url",
             "-u",
             help="Experience Cloud URL, e.g. https://company.portal.com/s",
+            show_default=False,
         ),
     ],
     token_json: Annotated[
@@ -201,6 +204,44 @@ def get_apex_methods(cli_context: typer.Context):
     print_component_apex_details(components_with_apex_details)
 
 
+@cli.command()
+def call_apex(
+    cli_context: typer.Context,
+    namespace: str,
+    class_name: str,
+    method_name: str,
+    parameter_file: Annotated[
+        Optional[Path],
+        typer.Argument(
+            help="Points to a json file containing apex parameters for method call"
+        ),
+    ] = None,
+):
+    """
+    Call an Apex method with params. Method parameters need to be made available within a json-file
+    """
+    print_message(
+        "Calling Apex method", "%s.%s.%s" % (namespace, class_name, method_name)
+    )
+    payload = load_payload_json_for("ACTION$executeApexMethod.json")
+    payload["actions"][0]["descriptor"] = "apex://%s.%s/ACTION$%s" % (
+        namespace,
+        class_name,
+        method_name,
+    )
+    if parameter_file:
+        payload["actions"][0]["params"] = json.loads(parameter_file.read_text())
+
+    json_response = AuraActionRequest(
+        payload, cli_context.obj, return_full_response=True
+    ).send_request()
+    if json_response["actions"][0]["returnValue"]:
+        print_json(json_response["actions"][0]["returnValue"])
+        return
+    if json_response["actions"][0]["error"]:
+        print_error("Error", json_response["actions"][0]["error"])
+
+
 @cli.command("sobjects")
 def list_accessible_sobjects(cli_context: typer.Context):
     """
@@ -316,6 +357,57 @@ def get_feed_items(
         dump_json_to_file(
             json_response["record"], f"{url_for_filename}-{record_id}-feed-items.json"
         )
+
+
+@cli.command("search")
+def search_records(
+    cli_context: typer.Context,
+    search_term: Annotated[str, typer.Argument(help="the term to search for")],
+    sobject_name: Annotated[str, typer.Argument(help="the sObject API Name")],
+    fields: Annotated[
+        str,
+        typer.Argument(
+            help="Comma delimited list of fields to return, e.g. 'Name, Industry'"
+        ),
+    ],
+    raw_response: Annotated[
+        bool, typer.Option("--raw", help="Display Raw JSON response")
+    ] = False,
+):
+    """
+    Search for records by term and sObject API Name. At least one additional fields is required.
+    """
+    payload = load_payload_json_for("ACTION$searchRecord.json")
+    payload["actions"][0]["params"]["scope"] = sobject_name
+    payload["actions"][0]["params"]["term"] = search_term
+    if fields:
+        payload["actions"][0]["params"]["additionalFields"] = (
+            fields.split(", ") if ", " in fields else fields.split(",")
+        )
+    json_response = AuraActionRequest(
+        payload, cli_context.obj, return_full_response=raw_response
+    ).send_request()
+    if raw_response:
+        print_json(json_response)
+        return
+    if json_response["result"]:
+        print_message("Search completed", "successfully retrieved")
+        print_json(json_response["result"])
+    else:
+        print_error("Error searching for records", "No result returned")
+        raise typer.Exit(1)
+
+
+@cli.command("profile-menu")
+def get_profile_menu(cli_context: typer.Context):
+    """
+    Get the profile menu
+    """
+    payload = load_payload_json_for("ACTION$getProfileMenuResponse.json")
+    json_response = AuraActionRequest(payload, cli_context.obj).send_request()
+    if json_response:
+        print_message("Profile Menu Details")
+        print_json(json_response)
 
 
 if __name__ == "__main__":
