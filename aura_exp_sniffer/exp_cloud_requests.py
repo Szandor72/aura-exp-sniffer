@@ -240,7 +240,7 @@ class AuraComponentCollector:
             "Start Collecting Components"
         ), "%s routes to scan. Be patient." % len(self.routes)
         excluded_standard_component_namespaces = list(
-            load_payload_json_for("IGNORELIST.json")
+            load_payload_json_for("IGNORELIST-NAMESPACE.json")
         )
         payload_template = load_payload_json_for("ACTION$getPageComponent.json")
         for route in self.routes:

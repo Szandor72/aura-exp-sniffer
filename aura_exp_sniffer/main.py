@@ -243,23 +243,38 @@ def call_apex(
 
 
 @cli.command("sobjects")
-def list_accessible_sobjects(cli_context: typer.Context):
+def list_accessible_sobjects(
+    cli_context: typer.Context,
+    display: Annotated[
+        bool, typer.Option("-d", "--display", help="Display each route path")
+    ] = True,
+):
     """
-    Will print accessible Standard and Custom sObjects respectively
+    Will print most accessible Standard and Custom sObjects respectively.
     """
 
     payload = load_payload_json_for("ACTION$getConfigData.json")
+    ignored_standard_sobjects = load_payload_json_for(
+        "IGNORELIST-STANDARD-SOBJECTS.json"
+    )
     json_response = AuraActionRequest(payload, cli_context.obj).send_request()
     api_name_to_id_prefixes = json_response.get("apiNamesToKeyPrefixes")
     custom_sobject_list = []
     standard_sobject_list = []
+    all_sobjects = []
     for key in api_name_to_id_prefixes.keys():
-        if key.endswith("__c"):
-            custom_sobject_list.append(key)
-        else:
-            standard_sobject_list.append(key)
-    print_message("Custom sObject list", custom_sobject_list)
-    print_message("Standard sObject list", standard_sobject_list)
+        if key not in ignored_standard_sobjects:
+            all_sobjects.append(key)
+            if key.endswith("__c"):
+                custom_sobject_list.append(key)
+            else:
+                standard_sobject_list.append(key)
+    if display:
+        print_message("Custom sObject list")
+        print(custom_sobject_list)
+        print_message("Standard sObject list")
+        print(standard_sobject_list)
+    return all_sobjects
 
 
 @cli.command("records")
@@ -269,8 +284,19 @@ def get_records(
     number_of_records: Annotated[
         int, typer.Argument(help="Number of records to fetch")
     ] = 10,
+    display: Annotated[
+        bool, typer.Option("--display", "-d", help="Display results")
+    ] = True,
     dump: Annotated[
         bool, typer.Option("--dump", "-d", help="Dump records to a file")
+    ] = False,
+    skip_existing: Annotated[
+        bool,
+        typer.Option(
+            "--skip-existing",
+            "-s",
+            help="Works with --dump only. Skip retrieving records if file dump already exists",
+        ),
     ] = False,
 ):
     """
@@ -292,18 +318,55 @@ def get_records(
         for recordWraper in json_response["result"]:
             retrieved_records.append(recordWraper["record"])
 
-        print_message("Records")
-        print_json(retrieved_records)
+        if display:
+            print_message("Records")
+            print_json(retrieved_records)
 
         if dump:
             url_for_filename = cli_context.obj.url.replace("https://", "").replace(
                 "/", "_"
             )
-            dump_json_to_file(
-                retrieved_records, f"{url_for_filename}-{sobject_name}-records.json"
-            )
+            filename = f"{url_for_filename}-{sobject_name}-records.json"
+            if skip_existing and Path(filename).exists():
+                return
+
+            dump_json_to_file(retrieved_records, filename)
         return
     print_error("Error retrieving %s records" % sobject_name, "No records found")
+
+
+@cli.command("dump")
+def dump_records_to_files(
+    cli_context: typer.Context,
+    full: Annotated[
+        bool, typer.Option("--full", "-f", help="Retrieve all records (max 1000)")
+    ] = False,
+    skip_existing: Annotated[
+        bool,
+        typer.Option(
+            "--skip-existing",
+            "-s",
+            help="Works with --dump only. Skip retrieving records if file dump already exists",
+        ),
+    ] = False,
+):
+    """
+    Dump accessible records to files. Retrieve 10 records per sObject by default.
+    """
+    # TODO where should we store max_page_size and default_page_size?
+    max_page_size = 1000
+    default_page_size = 10
+    all_sobjects = list_accessible_sobjects(cli_context, display=False)
+    number_of_records = max_page_size if full else default_page_size
+    for sobject_name in all_sobjects:
+        get_records(
+            cli_context,
+            sobject_name,
+            number_of_records,
+            display=False,
+            dump=True,
+            skip_existing=skip_existing,
+        )
 
 
 @cli.command("record")
@@ -371,7 +434,7 @@ def search_records(
         ),
     ],
     raw_response: Annotated[
-        bool, typer.Option("--raw", help="Display Raw JSON response")
+        bool, typer.Option("--raw", help="Return raw JSON response")
     ] = False,
 ):
     """
