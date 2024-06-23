@@ -102,11 +102,9 @@ class AuraConfigLoader:
 
     def _extract_aura_endpoint_details(self, raw_response):
         if "fwuid" not in raw_response:
-            print_error(
-                "Couldn't find fwuid.",
-                "No Aura App Login Page. Are we maybe redirected to a Visualforce Page?",
+            raise Exception(
+                "No Aura App Login Page. Are we maybe redirected to a Visualforce Page?"
             )
-            raise
 
         urlencoded_aura_endpoints = re.search(
             r"\/s\/sfsites\/l\/([^\/]+fwuid[^\/]+)", raw_response
@@ -195,7 +193,7 @@ class AuraRoutesCollector:
 
     def collect(self):
         print_message("Start Collecting Routes")
-        raw_response = BasicHttp().request(self.bootstrap_url)
+        raw_response = BasicHttp(self.session_id).request(self.bootstrap_url)
         self.routes = self._extract_routes(raw_response)
         return self.routes
 
@@ -403,7 +401,7 @@ class AuraActionRequest:
         }
 
         try:
-            response_body = BasicHttp().request(
+            response_body = BasicHttp(self.session_id).request(
                 self.aura_endpoint_url,
                 values=values,
                 method="POST",

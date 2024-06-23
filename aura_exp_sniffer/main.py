@@ -3,6 +3,7 @@ from typing_extensions import Annotated
 from types import SimpleNamespace
 import sys
 from rich import print
+import json
 
 
 from exp_cloud_requests import (
@@ -61,9 +62,12 @@ def main(
         url = url[:-2]
     if url.endswith("/"):
         url = url[:-1]
-    # TODO add json token parsing here
     aura_token = ""
     session_id = ""
+    if token_json:
+        token_details = parse_token_from_shell(token_json)
+        aura_token = token_details["token"]
+        session_id = token_details["sid"]
     if not cli_context.obj:
         cli_context.obj = SimpleNamespace(
             url=url,
@@ -83,6 +87,21 @@ def main(
     ):
         select_aura_endpoint_after_validation(cli_context)
         get_aura_config_from_url(cli_context)
+
+
+def parse_token_from_shell(token_json: str):
+    """
+    Due to shell parsing, quotation marks might get lost for the token json
+    """
+    if '"' not in token_json:
+        return json.loads(
+            token_json.replace("token", '"token"')
+            .replace("sid", '"sid"')
+            .replace(":", ':"')
+            .replace(",", '",')
+            .replace("}", '"}')
+        )
+    return json.loads(token_json)
 
 
 def select_aura_endpoint_after_validation(cli_context: typer.Context):
@@ -106,14 +125,18 @@ def get_aura_config_from_url(cli_context: typer.Context):
     if cli_context.obj.aura_config:
         return
 
-    aura_config = AuraConfigLoader(cli_context.obj).get_aura_config()
-    aura_endpoint_config = aura_config.get("aura_config")
-    bootstrap_url = aura_config.get("bootstrap_url")
+    try:
+        aura_config = AuraConfigLoader(cli_context.obj).get_aura_config()
+        aura_endpoint_config = aura_config.get("aura_config")
+        bootstrap_url = aura_config.get("bootstrap_url")
 
-    cli_context.obj.aura_config = aura_endpoint_config
-    cli_context.obj.aura_bootstrap_url = bootstrap_url
+        cli_context.obj.aura_config = aura_endpoint_config
+        cli_context.obj.aura_bootstrap_url = bootstrap_url
 
-    print_message(":white_check_mark: Success", "Aura Endpoint Config set")
+        print_message(":white_check_mark: Success", "Aura Endpoint Config set")
+    except Exception as e:
+        print_error("Fatal Error", e)
+        raise typer.Exit(1)
 
 
 @cli.command("routes")
@@ -178,7 +201,7 @@ def get_apex_methods(cli_context: typer.Context):
     print_component_apex_details(components_with_apex_details)
 
 
-@cli.command("accessible-sobjects")
+@cli.command("sobjects")
 def list_accessible_sobjects(cli_context: typer.Context):
     """
     Will print accessible Standard and Custom sObjects respectively
