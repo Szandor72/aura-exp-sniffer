@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "aura-exp-sniffer"
 version = "0.1.0"
-description = ""
+description = "A simple security research tool to access undocumented Aura APIs"
 authors = ["Ch. Szandor Knapp <szandor72@gmail.com>"]
 readme = "README.md"
 
@@ -10,6 +10,8 @@ python = "^3.11"
 typer = {extras = ["all"], version = "^0.12.3"}
 requests = "^2.32.3"
 
+[tool.poetry.scripts]
+aura-exp-sniffer = "aura_exp_sniffer.main:cli"
 
 [build-system]
 requires = ["poetry-core"]
