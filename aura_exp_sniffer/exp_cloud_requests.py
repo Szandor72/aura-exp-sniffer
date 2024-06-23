@@ -7,8 +7,8 @@ import re
 import json
 from json.decoder import JSONDecodeError
 
-from file_utils import load_payload_json_for
-from message_utils import print_message, print_error
+from aura_exp_sniffer.file_utils import load_payload_json_for
+from aura_exp_sniffer.message_utils import print_message, print_error
 
 
 # Disable SSL warnings

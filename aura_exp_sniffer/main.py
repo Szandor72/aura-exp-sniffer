@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 
-from exp_cloud_requests import (
+from aura_exp_sniffer.exp_cloud_requests import (
     AuraEndpointSelector,
     AuraConfigLoader,
     AuraActionRequest,
@@ -15,13 +15,13 @@ from exp_cloud_requests import (
     AuraComponentCollector,
     AuraComponentApexMethodCollector,
 )
-from message_utils import (
+from aura_exp_sniffer.message_utils import (
     print_message,
     print_error,
     print_pretty,
     print_component_apex_details,
 )
-from file_utils import load_payload_json_for, dump_json_to_file
+from aura_exp_sniffer.file_utils import load_payload_json_for, dump_json_to_file
 
 cli = typer.Typer(
     help="Aura Sniffer: A simple security research tool to access undocumented Aura APIs",
