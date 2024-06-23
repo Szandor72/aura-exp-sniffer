@@ -92,13 +92,9 @@ def select_aura_endpoint_after_validation(cli_context: typer.Context):
     if cli_context.obj.active_endpoint:
         return
 
-    try:
-        cli_context.obj.active_endpoint = AuraEndpointSelector(
-            cli_context.obj
-        ).select_aura_endpoint()
-    except Exception as e:
-        print_error("Error selecting Aura endpoint", str(e))
-        raise typer.Exit(1)
+    cli_context.obj.active_endpoint = AuraEndpointSelector(
+        cli_context.obj
+    ).select_aura_endpoint()
 
     print_message(":white_check_mark: Active Endpoint", cli_context.obj.active_endpoint)
 
@@ -110,12 +106,9 @@ def get_aura_config_from_url(cli_context: typer.Context):
     if cli_context.obj.aura_config:
         return
 
-    try:
-        aura_config = AuraConfigLoader(cli_context.obj).get_aura_config()
-        aura_endpoint_config = aura_config.get("aura_config")
-        bootstrap_url = aura_config.get("bootstrap_url")
-    except Exception as e:
-        raise typer.Exit(1)
+    aura_config = AuraConfigLoader(cli_context.obj).get_aura_config()
+    aura_endpoint_config = aura_config.get("aura_config")
+    bootstrap_url = aura_config.get("bootstrap_url")
 
     cli_context.obj.aura_config = aura_endpoint_config
     cli_context.obj.aura_bootstrap_url = bootstrap_url
@@ -134,11 +127,7 @@ def get_routes(
     Get all available Aura routes
     """
     print_message("Getting Aura Routes:", "follow Bootstrap URL")
-    try:
-        routes = AuraRoutesCollector(cli_context.obj).collect()
-    except Exception as e:
-        print_error("Error getting Aura routes", str(e))
-        raise typer.Exit(1)
+    routes = AuraRoutesCollector(cli_context.obj).collect()
 
     cli_context.obj.routes = routes
 
@@ -160,11 +149,8 @@ def get_custom_components(
     """
     if not cli_context.obj.routes:
         get_routes(cli_context, display=False)
-    try:
-        custom_component_list = AuraComponentCollector(cli_context.obj).collect()
-    except Exception as e:
-        print_error("Error getting custom component names", str(e))
-        raise typer.Exit(1)
+
+    custom_component_list = AuraComponentCollector(cli_context.obj).collect()
 
     cli_context.obj.custom_component_list = custom_component_list
 
@@ -186,14 +172,10 @@ def get_apex_methods(cli_context: typer.Context):
     if len(cli_context.obj.custom_component_list) == 0:
         print_error("No custom components found", "No Apex methods to retrieve")
         raise typer.Exit(1)
-    try:
-        components_with_apex_details = AuraComponentApexMethodCollector(
-            cli_context.obj
-        ).collect()
-        print_component_apex_details(components_with_apex_details)
-    except Exception as e:
-        print_error("Error getting Apex methods", str(e))
-        raise typer.Exit(1)
+    components_with_apex_details = AuraComponentApexMethodCollector(
+        cli_context.obj
+    ).collect()
+    print_component_apex_details(components_with_apex_details)
 
 
 @cli.command("accessible-sobjects")
@@ -201,22 +183,19 @@ def list_accessible_sobjects(cli_context: typer.Context):
     """
     Will print accessible Standard and Custom sObjects respectively
     """
-    try:
-        payload = load_payload_json_for("ACTION$getConfigData.json")
-        json_response = AuraActionRequest(payload, cli_context.obj).send_request()
-        api_name_to_id_prefixes = json_response.get("apiNamesToKeyPrefixes")
-        custom_sobject_list = []
-        standard_sobject_list = []
-        for key in api_name_to_id_prefixes.keys():
-            if key.endswith("__c"):
-                custom_sobject_list.append(key)
-            else:
-                standard_sobject_list.append(key)
-        print_message("Custom sObject list", custom_sobject_list)
-        print_message("Standard sObject list", standard_sobject_list)
-    except Exception as e:
-        print_error("Error getting sObject list", str(e))
-        raise typer.Exit(1)
+
+    payload = load_payload_json_for("ACTION$getConfigData.json")
+    json_response = AuraActionRequest(payload, cli_context.obj).send_request()
+    api_name_to_id_prefixes = json_response.get("apiNamesToKeyPrefixes")
+    custom_sobject_list = []
+    standard_sobject_list = []
+    for key in api_name_to_id_prefixes.keys():
+        if key.endswith("__c"):
+            custom_sobject_list.append(key)
+        else:
+            standard_sobject_list.append(key)
+    print_message("Custom sObject list", custom_sobject_list)
+    print_message("Standard sObject list", standard_sobject_list)
 
 
 @cli.command("records")
@@ -280,14 +259,40 @@ def get_record(
     if json_response["record"]:
         print_message("Record", "successfully retrieved")
         print_json(json_response["record"])
+    else:
+        print_error("Error retrieving record", "No record found")
+        raise typer.Exit(1)
 
     if dump:
         url_for_filename = cli_context.obj.url.replace("https://", "").replace("/", "_")
         dump_json_to_file(
             json_response["record"], f"{url_for_filename}-{record_id}-record.json"
         )
-        return
-    print_error("Error retrieving record", "No record found")
+
+
+@cli.command("feed-items")
+def get_feed_items(
+    cli_context: typer.Context,
+    record_id: Annotated[str, typer.Argument(help="The Id of an sObject record")],
+    dump: Annotated[
+        bool, typer.Option("--dump", "-d", help="Dump records to a file")
+    ] = False,
+):
+    """
+    Get feed items by record Id
+    """
+    payload = load_payload_json_for("ACTION$getFeedItems.json")
+    payload["actions"][0]["params"]["recordId"] = record_id
+    json_response = AuraActionRequest(payload, cli_context.obj).send_request()
+    if json_response:
+        print_message("Feed Items Response")
+        print_json(json_response)
+
+    if dump:
+        url_for_filename = cli_context.obj.url.replace("https://", "").replace("/", "_")
+        dump_json_to_file(
+            json_response["record"], f"{url_for_filename}-{record_id}-feed-items.json"
+        )
 
 
 if __name__ == "__main__":
