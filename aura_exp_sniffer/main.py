@@ -2,7 +2,6 @@ import typer
 from typing_extensions import Annotated
 from types import SimpleNamespace
 import sys
-from rich import print
 import json
 from pathlib import Path
 from typing import Optional
@@ -19,7 +18,7 @@ from exp_cloud_requests import (
 from message_utils import (
     print_message,
     print_error,
-    print_json,
+    print_pretty,
     print_component_apex_details,
 )
 from file_utils import load_payload_json_for, dump_json_to_file
@@ -160,7 +159,7 @@ def get_routes(
     if display:
         print_message("Routes", "%s routes found" % len(routes))
         for route in routes:
-            print(route.get("path"))
+            print_pretty(route.get("path"))
 
 
 @cli.command("custom-components")
@@ -185,7 +184,7 @@ def get_custom_components(
             "Custom Components", "%s components found" % len(custom_component_list)
         )
         for component in custom_component_list:
-            print(component)
+            print_pretty(component)
 
 
 @cli.command("apex-methods")
@@ -236,7 +235,7 @@ def call_apex(
         payload, cli_context.obj, return_full_response=True
     ).send_request()
     if json_response["actions"][0]["returnValue"]:
-        print_json(json_response["actions"][0]["returnValue"])
+        print_pretty(json_response["actions"][0]["returnValue"])
         return
     if json_response["actions"][0]["error"]:
         print_error("Error", json_response["actions"][0]["error"])
@@ -271,9 +270,9 @@ def list_accessible_sobjects(
                 standard_sobject_list.append(key)
     if display:
         print_message("Custom sObject list")
-        print(custom_sobject_list)
+        print_pretty(custom_sobject_list)
         print_message("Standard sObject list")
-        print(standard_sobject_list)
+        print_pretty(standard_sobject_list)
     return all_sobjects
 
 
@@ -302,14 +301,20 @@ def get_records(
     """
     Get records by sObject API Name
     """
-    MAX_PAGE_SIZE = 1000
+    # early return on special case if we dump records and skip_existing is set
+    url_for_filename = cli_context.obj.url.replace("https://", "").replace("/", "_")
+    filename = f"{url_for_filename}-{sobject_name}-records.json"
+    if dump and skip_existing and Path("file-dumps", filename).exists():
+        return
+
     DEFAULT_PAGE = 1
     payload = load_payload_json_for("ACTION$getItems.json")
     payload["actions"][0]["params"]["entityNameOrId"] = sobject_name
     payload["actions"][0]["params"]["pageSize"] = number_of_records
     payload["actions"][0]["params"]["currentPage"] = DEFAULT_PAGE
+
     json_response = AuraActionRequest(payload, cli_context.obj).send_request()
-    if json_response["result"] and json_response["totalCount"]:
+    if json_response and json_response["result"] and json_response["totalCount"]:
         print_message(
             "Total records of type %s retrieved" % sobject_name,
             json_response["totalCount"],
@@ -320,16 +325,11 @@ def get_records(
 
         if display:
             print_message("Records")
-            print_json(retrieved_records)
+            print_pretty(retrieved_records)
 
         if dump:
-            url_for_filename = cli_context.obj.url.replace("https://", "").replace(
-                "/", "_"
-            )
-            filename = f"{url_for_filename}-{sobject_name}-records.json"
             if skip_existing and Path(filename).exists():
                 return
-
             dump_json_to_file(retrieved_records, filename)
         return
     print_error("Error retrieving %s records" % sobject_name, "No records found")
@@ -385,7 +385,7 @@ def get_record(
     json_response = AuraActionRequest(payload, cli_context.obj).send_request()
     if json_response["record"]:
         print_message("Record", "successfully retrieved")
-        print_json(json_response["record"])
+        print_pretty(json_response["record"])
     else:
         print_error("Error retrieving record", "No record found")
         raise typer.Exit(1)
@@ -413,7 +413,7 @@ def get_feed_items(
     json_response = AuraActionRequest(payload, cli_context.obj).send_request()
     if json_response:
         print_message("Feed Items Response")
-        print_json(json_response)
+        print_pretty(json_response)
 
     if dump:
         url_for_filename = cli_context.obj.url.replace("https://", "").replace("/", "_")
@@ -451,11 +451,11 @@ def search_records(
         payload, cli_context.obj, return_full_response=raw_response
     ).send_request()
     if raw_response:
-        print_json(json_response)
+        print_pretty(json_response)
         return
     if json_response["result"]:
         print_message("Search completed", "successfully retrieved")
-        print_json(json_response["result"])
+        print_pretty(json_response["result"])
     else:
         print_error("Error searching for records", "No result returned")
         raise typer.Exit(1)
@@ -470,7 +470,7 @@ def get_profile_menu(cli_context: typer.Context):
     json_response = AuraActionRequest(payload, cli_context.obj).send_request()
     if json_response:
         print_message("Profile Menu Details")
-        print_json(json_response)
+        print_pretty(json_response)
 
 
 if __name__ == "__main__":

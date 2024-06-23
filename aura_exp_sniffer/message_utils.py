@@ -12,7 +12,7 @@ def print_error(title, message=""):
     print(ERROR_TEMPLATE.format(title=title, details=message))
 
 
-def print_json(json_data):
+def print_pretty(json_data):
     print(json_data)
 
 
