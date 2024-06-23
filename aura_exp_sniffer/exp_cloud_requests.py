@@ -116,8 +116,7 @@ class AuraConfigLoader:
 
     def _validate_aura_endpoint_details(self, details):
         if not all(details.get(key) for key in ["fwuid", "app", "loaded"]):
-            print_error("Aborting", "Couldn't find fwuid or markup details.")
-            raise
+            raise Exception("Aborting", "Couldn't find fwuid or markup details.")
 
     def _build_aura_config(self, details):
         return {
