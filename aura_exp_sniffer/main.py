@@ -24,7 +24,7 @@ from aura_exp_sniffer.message_utils import (
 from aura_exp_sniffer.file_utils import load_payload_json_for, dump_json_to_file
 
 cli = typer.Typer(
-    help="Aura Sniffer: A simple security research tool to access undocumented Aura APIs",
+    help="Aura Exp Sniffer: A simple security research tool to access undocumented Aura APIs",
     no_args_is_help=True,
 )
 
@@ -46,7 +46,7 @@ def main(
         typer.Option(
             "--token",
             "-t",
-            help="JSON with Aura Token and SID (session id) to access Aura APIs",
+            help="JSON with Aura Token and SID (session id) for authenticated access",
         ),
     ] = "",
 ):
@@ -212,7 +212,7 @@ def call_apex(
     parameter_file: Annotated[
         Optional[Path],
         typer.Argument(
-            help="Points to a json file containing apex parameters for method call"
+            help="Points to a JSON file containing apex parameters for method call"
         ),
     ] = None,
 ):
