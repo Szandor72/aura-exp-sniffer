@@ -427,5 +427,6 @@ class AuraActionRequest:
             raise Exception(
                 "Failed to get action property in response: %s" % response_json
             )
-
+        if response_json.get("actions")[0].get("state") == "ERROR":
+            raise Exception(response_json.get("actions")[0].get("error")[0])
         return response_json.get("actions")[0].get("returnValue")

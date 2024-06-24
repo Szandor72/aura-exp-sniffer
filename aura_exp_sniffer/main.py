@@ -81,6 +81,8 @@ def main(
             routes=[],
             custom_component_list=[],
         )
+    # we set config values for each command invocation but only once
+    # and only if we don't show help or other typer default options
     if not all(
         [cli_context.obj.active_endpoint, cli_context.obj.aura_config]
     ) and not any(
@@ -117,7 +119,7 @@ def select_aura_endpoint_after_validation(cli_context: typer.Context):
         cli_context.obj
     ).select_aura_endpoint()
 
-    print_message(":white_check_mark: Active Endpoint", cli_context.obj.active_endpoint)
+    print_message("Active Endpoint set", cli_context.obj.active_endpoint)
 
 
 def get_aura_config_from_url(cli_context: typer.Context):
@@ -135,7 +137,7 @@ def get_aura_config_from_url(cli_context: typer.Context):
         cli_context.obj.aura_config = aura_endpoint_config
         cli_context.obj.aura_bootstrap_url = bootstrap_url
 
-        print_message(":white_check_mark: Success", "Aura Endpoint Config set")
+        print_message("Aura Endpoint Config retrieved")
     except Exception as e:
         print_error("Fatal Error", e)
         raise typer.Exit(1)
@@ -151,7 +153,7 @@ def get_routes(
     """
     Get all available Aura routes
     """
-    print_message("Getting Aura Routes:", "follow Bootstrap URL")
+    print_message("Getting Aura Routes", "follow Bootstrap URL")
     routes = AuraRoutesCollector(cli_context.obj).collect()
 
     cli_context.obj.routes = routes
@@ -159,7 +161,9 @@ def get_routes(
     if display:
         print_message("Routes", "%s routes found" % len(routes))
         for route in routes:
-            print_pretty(route.get("path"))
+            route_url = f'{cli_context.obj.url}/s{route.get("path")}'
+            display_message = f'{route_url} {route.get("path")}'
+            print_pretty(display_message)
 
 
 @cli.command("custom-components")
@@ -231,9 +235,14 @@ def call_apex(
     if parameter_file:
         payload["actions"][0]["params"] = json.loads(parameter_file.read_text())
 
-    json_response = AuraActionRequest(
-        payload, cli_context.obj, return_full_response=True
-    ).send_request()
+    try:
+        json_response = AuraActionRequest(
+            payload, cli_context.obj, return_full_response=True
+        ).send_request()
+    except Exception as e:
+        print_error("Error calling %s.%s" % (class_name, method_name))
+        print_pretty(e)
+        raise typer.Exit(1)
     if json_response["actions"][0]["returnValue"]:
         print_pretty(json_response["actions"][0]["returnValue"])
         return
@@ -256,7 +265,12 @@ def list_accessible_sobjects(
     ignored_standard_sobjects = load_payload_json_for(
         "IGNORELIST-STANDARD-SOBJECTS.json"
     )
-    json_response = AuraActionRequest(payload, cli_context.obj).send_request()
+    try:
+        json_response = AuraActionRequest(payload, cli_context.obj).send_request()
+    except Exception as e:
+        print_error("Error retrieving sObject list")
+        print_pretty(e)
+        raise typer.Exit(1)
     api_name_to_id_prefixes = json_response.get("apiNamesToKeyPrefixes")
     custom_sobject_list = []
     standard_sobject_list = []
@@ -282,7 +296,7 @@ def get_records(
     sobject_name: Annotated[str, typer.Argument(help="The sObject API Name")] = "User",
     number_of_records: Annotated[
         int, typer.Argument(help="Number of records to fetch")
-    ] = 10,
+    ] = 3,
     display: Annotated[
         bool, typer.Option("--display", "-d", help="Display results")
     ] = True,
@@ -295,6 +309,12 @@ def get_records(
             "--skip-existing",
             "-s",
             help="Works with --dump only. Skip retrieving records if file dump already exists",
+        ),
+    ] = False,
+    ignore_exception: Annotated[
+        bool,
+        typer.Option(
+            help="Continue on exception when dumping all records", hidden=True
         ),
     ] = False,
 ):
@@ -313,19 +333,28 @@ def get_records(
     payload["actions"][0]["params"]["pageSize"] = number_of_records
     payload["actions"][0]["params"]["currentPage"] = DEFAULT_PAGE
 
-    json_response = AuraActionRequest(payload, cli_context.obj).send_request()
-    if json_response and json_response["result"] and json_response["totalCount"]:
-        print_message(
-            "Total records of type %s retrieved" % sobject_name,
-            json_response["totalCount"],
-        )
+    json_response = json.loads("{}")
+    try:
+        json_response = AuraActionRequest(payload, cli_context.obj).send_request()
+    except Exception as e:
+        print_error("Error retrieving %s records" % sobject_name)
+        print_pretty(e)
+        if not ignore_exception and not dump:
+            raise typer.Exit(1)
+    if json_response.get("result") and json_response.get("totalCount"):
+
         retrieved_records = []
         for recordWraper in json_response["result"]:
             retrieved_records.append(recordWraper["record"])
 
-        if display:
+        if display and not dump:
             print_message("Records")
             print_pretty(retrieved_records)
+
+        print_message(
+            "Total records of type %s that can be retrieved" % sobject_name,
+            json_response["totalCount"],
+        )
 
         if dump:
             if skip_existing and Path(filename).exists():
@@ -366,6 +395,7 @@ def dump_records_to_files(
             display=False,
             dump=True,
             skip_existing=skip_existing,
+            ignore_exception=True,
         )
 
 
@@ -382,10 +412,15 @@ def get_record(
     """
     payload = load_payload_json_for("ACTION$getRecord.json")
     payload["actions"][0]["params"]["recordId"] = record_id
-    json_response = AuraActionRequest(payload, cli_context.obj).send_request()
-    if json_response["record"]:
+    try:
+        json_response = AuraActionRequest(payload, cli_context.obj).send_request()
+    except Exception as e:
+        print_error("Error retrieving record with record id %s" % record_id)
+        print_pretty(e)
+        raise typer.Exit(1)
+    if json_response.get("record"):
         print_message("Record", "successfully retrieved")
-        print_pretty(json_response["record"])
+        print_pretty(json_response.get("record"))
     else:
         print_error("Error retrieving record", "No record found")
         raise typer.Exit(1)
@@ -393,7 +428,7 @@ def get_record(
     if dump:
         url_for_filename = cli_context.obj.url.replace("https://", "").replace("/", "_")
         dump_json_to_file(
-            json_response["record"], f"{url_for_filename}-{record_id}-record.json"
+            json_response.get("record"), f"{url_for_filename}-{record_id}-record.json"
         )
 
 
@@ -410,7 +445,12 @@ def get_feed_items(
     """
     payload = load_payload_json_for("ACTION$getFeedItems.json")
     payload["actions"][0]["params"]["recordId"] = record_id
-    json_response = AuraActionRequest(payload, cli_context.obj).send_request()
+    try:
+        json_response = AuraActionRequest(payload, cli_context.obj).send_request()
+    except Exception as e:
+        print_error("Error retrieving feed items for record id %s" % record_id)
+        print_pretty(e)
+        raise typer.Exit(1)
     if json_response:
         print_message("Feed Items Response")
         print_pretty(json_response)
