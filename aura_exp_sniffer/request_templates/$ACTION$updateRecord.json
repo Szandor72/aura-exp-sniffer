@@ -1,0 +1,18 @@
+{
+  "actions": [
+    {
+      "id": "123;a",
+      "descriptor": "aura://RecordUiController/ACTION$updateRecord",
+      "callingDescriptor": "UNKNOWN",
+      "params": {
+        "recordId": "<recordId>",
+        "recordInput": {
+          "apiName": "<sobject_api_name>",
+          "fields": {
+            "Name": "<new_name>"
+          }
+        }
+      }
+    }
+  ]
+}
