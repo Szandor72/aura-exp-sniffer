@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "A simple security research tool to access undocumented Aura APIs"
 authors = ["Ch. Szandor Knapp <szandor72@gmail.com>"]
 readme = "README.md"
+include = ["aura_exp_sniffer/request_templates/**"]
 
 [tool.poetry.dependencies]
 python = "^3.11"
