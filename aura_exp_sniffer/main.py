@@ -5,6 +5,7 @@ import sys
 import json
 from pathlib import Path
 from typing import Optional
+import inspect
 
 
 from aura_exp_sniffer.exp_cloud_requests import (
@@ -311,12 +312,6 @@ def get_records(
             help="Works with --dump only. Skip retrieving records if file dump already exists",
         ),
     ] = False,
-    ignore_exception: Annotated[
-        bool,
-        typer.Option(
-            help="Continue on exception when dumping all records", hidden=True
-        ),
-    ] = False,
 ):
     """
     Get records by sObject API Name
@@ -339,7 +334,8 @@ def get_records(
     except Exception as e:
         print_error("Error retrieving %s records" % sobject_name)
         print_pretty(e)
-        if not ignore_exception and not dump:
+        called_by = inspect.stack()[1].function if len(inspect.stack()) > 1 else ""
+        if called_by != "dump_records_to_files":
             raise typer.Exit(1)
     if json_response.get("result") and json_response.get("totalCount"):
 
@@ -395,7 +391,6 @@ def dump_records_to_files(
             display=False,
             dump=True,
             skip_existing=skip_existing,
-            ignore_exception=True,
         )
 
 
