@@ -2,6 +2,9 @@
 
 > A simple security research tool to access undocumented Aura APIs within Salesforce Experience Cloud context. Works only with Aura based communities
 
+![image](https://github.com/Szandor72/aura-exp-sniffer/assets/16804218/af2a8c88-a90a-47db-baf8-2c25655ffe61)
+
+
 ## Project Details
 
 This is a [Poetry](https://python-poetry.org/) based python project. [Typer](https://typer.tiangolo.com/) is used for CLI.
